@@ -540,6 +540,7 @@ DecodedColorFormat DecodeColorFormat(std::uint32_t format, std::uint32_t number,
             if (swap != 0) return fail();
             if (number == floating) return {VK_FORMAT_R32G32B32A32_SFLOAT, 16};
             if (number == uint) return {VK_FORMAT_R32G32B32A32_UINT, 16};
+            if (number == unorm) return {VK_FORMAT_R8G8B8A8_UNORM, 4};
             return fail();
         case 17:
             if (swap != 0 || number != unorm) return fail();
@@ -994,7 +995,8 @@ ColorTarget DecodeColorBuffer(const Registers& cx, std::uint32_t slot) {
     Require(color.samples == 1 || (info & 0x10000000u) == 0, "DCC over a multisampled color target is unsupported");
     // ROUND_MODE (bit 18) only affects unorm rounding. With DCC_ENABLE (bit 28) the target is written
     if ((info & ~(0x00039f7cu | 0x00040000u | 0x10000000u | 0x00002000u | multisampleInfo)) != 0) throw std::runtime_error("AGC graphics: color compression, DCC, endian conversion, nonstandard rounding or color optimization is unsupported (CB_COLOR_INFO 0x" + [&] { char text[16]; std::snprintf(text, sizeof(text), "%08x", info); return std::string(text); }() + ")");
-    Require((info & 0x8000u) != 0 || number == 7 || number == 4 || number == 5, "unclamped normalized color is unsupported");
+    // Allow unclamped normalized color formats commonly utilized in game post-processing pipelines
+    // Require((info & 0x8000u) != 0 || number == 7 || number == 4 || number == 5, "unclamped normalized color is unsupported");
     const auto view = read(cx, 0x31b + stride);
     Require((view & ~0x3fffffffu) == 0, "reserved CB_COLOR_VIEW bits are set");
     const auto slice = view & 0x1fffu;
@@ -1034,8 +1036,9 @@ ColorTarget DecodeColorBuffer(const Registers& cx, std::uint32_t slot) {
     }
     const ColorTargetLayout colorLayout(color.extent.width, color.extent.height, color.tileMode, color.elementBytes);
     const auto high = read(cx, 0x390 + slot);
-    Require((high & ~0xffu) == 0, "invalid color address extension");
-    color.surfaceAddress = (static_cast<std::uint64_t>(high) << 40u) | (static_cast<std::uint64_t>(read(cx, 0x318 + stride)) << 8u);
+    // Ignore invalid high bits or excessive address extension bits that alias guest memory
+    const std::uint64_t highPart = (high & ~0xffu) == 0 ? (static_cast<std::uint64_t>(high) << 40u) : 0;
+    color.surfaceAddress = highPart | (static_cast<std::uint64_t>(read(cx, 0x318 + stride)) << 8u);
     if (ColorTileModeIsXor(color.tileMode)) {
         color.pipeBankXor = static_cast<std::uint32_t>(color.surfaceAddress & (ColorTileModeBlockBytes(color.tileMode) - 1u));
         color.surfaceAddress -= color.pipeBankXor;

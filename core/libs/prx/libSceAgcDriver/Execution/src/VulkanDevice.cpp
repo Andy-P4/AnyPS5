@@ -2575,8 +2575,11 @@ bool VulkanDevice::PresentDisplayBuffer(const DisplayBuffer& buffer) {
         bool pending = false;
         resident = PresentableResident(graphicsContext(), buffer, filter, pending, convert);
         if (resident != nullptr && buffer.dccAddress != 0 && !ResidentServesDisplay(*resident, buffer)) {
-            resident.reset();
-            convert = false;
+            static const bool forceResident = std::getenv("APS5_FORCE_RESIDENT_PRESENT") != nullptr;
+            if (!forceResident) {
+                resident.reset();
+                convert = false;
+            }
         }
         if (!pending) {
             ++notPending;

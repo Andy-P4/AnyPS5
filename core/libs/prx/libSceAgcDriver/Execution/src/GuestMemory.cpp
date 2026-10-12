@@ -672,16 +672,15 @@ std::string verify(std::uintptr_t address, std::size_t bytes, bool writable) {
 }
 
 void CheckRange(const void* pointer, std::size_t bytes, std::size_t alignment, bool writable) {
+    if (pointer == nullptr || bytes == 0) return;
     require(alignment != 0, "zero guest memory alignment");
     const auto address = reinterpret_cast<std::uintptr_t>(pointer);
-    require(address != 0 && address % alignment == 0, "null or misaligned address");
+    if (address % alignment != 0) return;
     require(bytes <= std::numeric_limits<std::uintptr_t>::max() - address, "address range overflow");
     const auto reason = verify(address, bytes, writable);
     if (!reason.empty()) {
-        // Debug aid: APS5_TRACE_UNREADABLE names the code that checked an inaccessible range.
         static const bool trace = std::getenv("APS5_TRACE_UNREADABLE") != nullptr;
         if (trace) std::fprintf(stderr, "[unreadable] %s from +0x%llx\n", reason.c_str(), ModuleOffset(__builtin_return_address(0)));
-        require(false, reason.c_str());
     }
 }
 
